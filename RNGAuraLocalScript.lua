@@ -41,10 +41,13 @@ local activeTracks: {AnimationTrack} = {}
 local animConnections: {RBXScriptConnection} = {}
 local WALK_SPEED_THRESHOLD = 1
 local RUN_SPEED_THRESHOLD = 12
+local rollCooldown = false
 
 local ASSETS = {
 	AuraTexture = "rbxassetid://6516649271",
 	Music = "rbxassetid://1843521328",
+	RollSfx = "rbxassetid://9118823101",
+	WinSfx = "rbxassetid://6026984224",
 }
 
 local ANIMATIONS = {
@@ -133,6 +136,18 @@ musicSound.Looped = true
 musicSound.Volume = 0.4
 musicSound.Name = "RNGAmbient"
 musicSound.Parent = SoundService
+
+local rollSound = Instance.new("Sound")
+rollSound.SoundId = ASSETS.RollSfx
+rollSound.Volume = 0.7
+rollSound.Name = "RNGRoll"
+rollSound.Parent = SoundService
+
+local winSound = Instance.new("Sound")
+winSound.SoundId = ASSETS.WinSfx
+winSound.Volume = 0.8
+winSound.Name = "RNGWin"
+winSound.Parent = SoundService
 
 local function getCharacter(timeout: number?): Model?
 	local character = player.Character
@@ -276,6 +291,14 @@ local function tween(instance: Instance, props: {[string]: any}, time: number, s
 	local tweenObj = TweenService:Create(instance, info, props)
 	tweenObj:Play()
 	return tweenObj
+end
+
+local function formatChance(chance: number): string
+	if chance >= 1 then
+		return string.format("%.1f%%", chance)
+	else
+		return string.format("%.2f%%", chance)
+	end
 end
 
 local function applyGradient(ui: UIGradient)
@@ -551,6 +574,11 @@ local function createGui()
 	local menuCorner = Instance.new("UICorner")
 	menuCorner.CornerRadius = UDim.new(0, 12)
 	menuCorner.Parent = menuContainer
+	local menuStroke = Instance.new("UIStroke")
+	menuStroke.Thickness = 2
+	menuStroke.Color = Color3.fromRGB(0, 232, 255)
+	menuStroke.Transparency = 0.4
+	menuStroke.Parent = menuContainer
 
 	local title = Instance.new("TextLabel")
 	title.Name = "Title"
@@ -620,6 +648,11 @@ local function createGui()
 	local resultCorner = Instance.new("UICorner")
 	resultCorner.CornerRadius = UDim.new(0, 12)
 	resultCorner.Parent = resultCard
+	local resultStroke = Instance.new("UIStroke")
+	resultStroke.Thickness = 2
+	resultStroke.Color = Color3.fromRGB(255, 255, 255)
+	resultStroke.Transparency = 0.5
+	resultStroke.Parent = resultCard
 
 	local resultTitle = Instance.new("TextLabel")
 	resultTitle.Name = "ResultTitle"
@@ -682,6 +715,11 @@ local function createGui()
 	local invCorner = Instance.new("UICorner")
 	invCorner.CornerRadius = UDim.new(0, 12)
 	invCorner.Parent = invFrame
+	local invStroke = Instance.new("UIStroke")
+	invStroke.Thickness = 2
+	invStroke.Color = Color3.fromRGB(0, 232, 255)
+	invStroke.Transparency = 0.35
+	invStroke.Parent = invFrame
 
 	local invTitle = Instance.new("TextLabel")
 	invTitle.BackgroundTransparency = 1
@@ -738,6 +776,11 @@ local function createGui()
 	local settingsCorner = Instance.new("UICorner")
 	settingsCorner.CornerRadius = UDim.new(0, 12)
 	settingsCorner.Parent = settingsFrame
+	local settingsStroke = Instance.new("UIStroke")
+	settingsStroke.Thickness = 2
+	settingsStroke.Color = Color3.fromRGB(0, 232, 255)
+	settingsStroke.Transparency = 0.35
+	settingsStroke.Parent = settingsFrame
 
 	local settingsTitle = Instance.new("TextLabel")
 	settingsTitle.BackgroundTransparency = 1
@@ -878,11 +921,11 @@ local function updateInventoryUI()
 		end
 	end
 	for index, aura in ipairs(auraInventory) do
-		local item = Instance.new("Frame")
-		item.Name = "Aura_" .. index
-		item.Size = UDim2.new(1, 0, 0, 48)
-		item.BackgroundColor3 = Color3.fromRGB(26, 28, 38)
-		item.BorderSizePixel = 0
+	local item = Instance.new("Frame")
+	item.Name = "Aura_" .. index
+	item.Size = UDim2.new(1, 0, 0, 48)
+	item.BackgroundColor3 = Color3.fromRGB(26, 28, 38)
+	item.BorderSizePixel = 0
 
 		if equippedAura and equippedAura.Name == aura.Name then
 			item.BackgroundColor3 = aura.Color:Lerp(Color3.fromRGB(20, 20, 30), 0.4)
@@ -899,9 +942,20 @@ local function updateInventoryUI()
 		label.Text = aura.Name .. " - " .. aura.Rarity
 		label.TextScaled = true
 		label.Font = Enum.Font.GothamSemibold
-		label.TextColor3 = aura.Color
-		label.TextXAlignment = Enum.TextXAlignment.Left
-		label.Parent = item
+	label.TextColor3 = aura.Color
+	label.TextXAlignment = Enum.TextXAlignment.Left
+	label.Parent = item
+
+	local chanceLabel = Instance.new("TextLabel")
+	chanceLabel.BackgroundTransparency = 1
+	chanceLabel.Size = UDim2.new(0.2, 0, 1, 0)
+	chanceLabel.Position = UDim2.new(0.64, 0, 0, 0)
+	chanceLabel.Text = formatChance(aura.Chance)
+	chanceLabel.TextScaled = true
+	chanceLabel.Font = Enum.Font.GothamMedium
+	chanceLabel.TextColor3 = Color3.fromRGB(200, 200, 220)
+	chanceLabel.TextXAlignment = Enum.TextXAlignment.Right
+	chanceLabel.Parent = item
 
 		local equipBtn = Instance.new("TextButton")
 		equipBtn.Name = "Equip"
@@ -1040,14 +1094,19 @@ local function showResult(aura: Aura)
 end
 
 local function rollAuraFlow()
-	if state ~= "Menu" then
+	if state ~= "Menu" or rollCooldown then
 		return
 	end
+	rollCooldown = true
 	state = "Rolling"
 	disableInput()
 	ui.MenuContainer.Visible = false
 	ui.RollingFrame.Visible = true
+	ui.RollButton.Text = "Rolling..."
+	ui.RollButton.AutoButtonColor = false
+	ui.RollButton.BackgroundColor3 = Color3.fromRGB(80, 80, 90)
 	startSpinner()
+	rollSound:Play()
 	tween(ui.RollingFrame, {BackgroundTransparency = 0}, 0.3)
 
 	local suspense = 2.4
@@ -1056,10 +1115,18 @@ local function rollAuraFlow()
 	task.wait(suspense)
 	stopSpinner()
 	ui.RollingFrame.Visible = false
+	winSound:Play()
 
 	table.insert(auraInventory, aura)
 	setEquippedAura(aura)
 	showResult(aura)
+
+	task.delay(1.2, function()
+		rollCooldown = false
+		ui.RollButton.Text = TEXT.Buttons.Roll
+		ui.RollButton.AutoButtonColor = true
+		ui.RollButton.BackgroundColor3 = Color3.fromRGB(35, 37, 55)
+	end)
 end
 
 ui.BlurToggle.MouseButton1Click:Connect(function()
