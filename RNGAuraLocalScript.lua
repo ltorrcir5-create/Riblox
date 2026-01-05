@@ -42,6 +42,7 @@ local animConnections: {RBXScriptConnection} = {}
 local WALK_SPEED_THRESHOLD = 1
 local RUN_SPEED_THRESHOLD = 12
 local rollCooldown = false
+local rollShakeConnection: RBXScriptConnection? = nil
 
 local ASSETS = {
 	AuraTexture = "rbxassetid://6516649271",
@@ -308,6 +309,37 @@ local function applyGradient(ui: UIGradient)
 		ui.Rotation = rotation % 360
 	end)
 	return connection
+end
+
+local function startCameraShake(intensity: number, duration: number)
+	if rollShakeConnection then
+		rollShakeConnection:Disconnect()
+		rollShakeConnection = nil
+	end
+	local startTime = os.clock()
+	local baseCFrame = camera.CFrame
+	rollShakeConnection = RunService.RenderStepped:Connect(function()
+		local t = os.clock() - startTime
+		if t > duration then
+			camera.CFrame = baseCFrame
+			rollShakeConnection:Disconnect()
+			rollShakeConnection = nil
+			return
+		end
+		local offset = Vector3.new(
+			math.sin(t * 18) * intensity,
+			math.sin(t * 22) * intensity * 0.6,
+			math.sin(t * 20) * intensity * 0.4
+		)
+		camera.CFrame = baseCFrame * CFrame.new(offset)
+	end)
+end
+
+local function stopCameraShake()
+	if rollShakeConnection then
+		rollShakeConnection:Disconnect()
+		rollShakeConnection = nil
+	end
 end
 
 local function clearAuraEffects()
@@ -848,6 +880,16 @@ local function createGui()
 	rollingFrame.BackgroundTransparency = 0.2
 	rollingFrame.Parent = gui
 
+	local vignette = Instance.new("ImageLabel")
+	vignette.Name = "Vignette"
+	vignette.BackgroundTransparency = 1
+	vignette.Size = UDim2.new(1, 0, 1, 0)
+	vignette.Image = "rbxassetid://5553946656"
+	vignette.ImageColor3 = Color3.fromRGB(0, 0, 0)
+	vignette.ImageTransparency = 0.35
+	vignette.ScaleType = Enum.ScaleType.Stretch
+	vignette.Parent = rollingFrame
+
 	local spinner = Instance.new("Frame")
 	spinner.Name = "Spinner"
 	spinner.AnchorPoint = Vector2.new(0.5, 0.5)
@@ -1011,6 +1053,14 @@ local function closeAllPanels()
 	state = "Menu"
 	setMenuCamera()
 	enableInput()
+	blur.Size = 0
+	ui.RollingFrame.Visible = false
+	stopSpinner()
+	stopCameraShake()
+	rollCooldown = false
+	ui.RollButton.Text = TEXT.Buttons.Roll
+	ui.RollButton.AutoButtonColor = true
+	ui.RollButton.BackgroundColor3 = Color3.fromRGB(35, 37, 55)
 end
 
 local function playLoading()
@@ -1108,6 +1158,7 @@ local function rollAuraFlow()
 	startSpinner()
 	rollSound:Play()
 	tween(ui.RollingFrame, {BackgroundTransparency = 0}, 0.3)
+	startCameraShake(0.12, 2.4)
 
 	local suspense = 2.4
 	local aura = pickAura()
@@ -1115,6 +1166,7 @@ local function rollAuraFlow()
 	task.wait(suspense)
 	stopSpinner()
 	ui.RollingFrame.Visible = false
+	stopCameraShake()
 	winSound:Play()
 
 	table.insert(auraInventory, aura)
@@ -1126,6 +1178,8 @@ local function rollAuraFlow()
 		ui.RollButton.Text = TEXT.Buttons.Roll
 		ui.RollButton.AutoButtonColor = true
 		ui.RollButton.BackgroundColor3 = Color3.fromRGB(35, 37, 55)
+		blur.Size = 0
+		stopCameraShake()
 	end)
 end
 
