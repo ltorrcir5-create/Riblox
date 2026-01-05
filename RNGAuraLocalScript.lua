@@ -8,6 +8,11 @@ local Lighting = game:GetService("Lighting")
 local UserInputService = game:GetService("UserInputService")
 local ContextActionService = game:GetService("ContextActionService")
 local RunService = game:GetService("RunService")
+local SoundService = game:GetService("SoundService")
+
+math.randomseed(os.time())
+math.random()
+math.random()
 
 local player = Players.LocalPlayer
 local playerGui = player:WaitForChild("PlayerGui")
@@ -24,18 +29,110 @@ type Aura = {
 
 local state = "Loading" -- Loading, Menu, Rolling, Result
 local auraInventory: { Aura } = {}
-local currentAuraEffect: Instance? = nil
+local currentAuraEffect: any = nil
 local blur = Instance.new("BlurEffect")
 blur.Size = 0
 blur.Parent = Lighting
+local blurEnabled = true
+local gradientConnection: RBXScriptConnection? = nil
+local musicEnabled = false
+local ASSETS = {
+	AuraTexture = "rbxassetid://6516649271",
+	Music = "rbxassetid://1843521328",
+}
+
+local ANIMATIONS = {
+	Common = "rbxassetid://507766388",
+	Rare = "rbxassetid://507766666",
+	Epic = "rbxassetid://507777268",
+	Legendary = "rbxassetid://2510196951",
+	Mythic = "rbxassetid://507771019",
+	Celestial = "rbxassetid://507772104",
+}
+
+local TEXT = {
+	LoadingMessages = {
+		"Cargando sistema RNG...",
+		"Inicializando auras...",
+		"Preparando animaciones...",
+		"Todo listo. ¡Disfruta!"
+	},
+	Title = "Auras RNG",
+	Buttons = {
+		Roll = "Roll Aura",
+		Inventory = "Inventario",
+		Settings = "Ajustes",
+	},
+	ResultTitle = "¡Aura Obtenida!",
+	Continue = "Continuar",
+	InventoryTitle = "Inventario de Auras",
+	SettingsTitle = "Ajustes",
+	Close = "Cerrar",
+	BlurOn = "Blur: Activado",
+	BlurOff = "Blur: Desactivado",
+	MusicOn = "Música: Activada",
+	MusicOff = "Música: Desactivada",
+}
+
+local eliteRarityLookup = {
+	Legendary = true,
+	Mythic = true,
+	Celestial = true,
+}
+
+local cinematicRarityLookup = {
+	Epic = true,
+	Legendary = true,
+	Mythic = true,
+	Celestial = true,
+}
+
+local function isEliteRarity(rarity: string): boolean
+	return eliteRarityLookup[rarity] == true
+end
+
+local function isCinematicRarity(rarity: string): boolean
+	return cinematicRarityLookup[rarity] == true
+end
+
+local musicSound = Instance.new("Sound")
+musicSound.SoundId = ASSETS.Music
+musicSound.Looped = true
+musicSound.Volume = 0.4
+musicSound.Name = "RNGAmbient"
+musicSound.Parent = SoundService
+
+local function getCharacter(timeout: number?): Model?
+	local character = player.Character
+	if character then
+		return character
+	end
+	local duration = timeout or 5
+	local start = os.clock()
+	local found: Model? = nil
+	local connection: RBXScriptConnection? = nil
+	connection = player.CharacterAdded:Connect(function(added)
+		found = added
+	end)
+	while os.clock() - start < duration and not found do
+		task.wait(0.1)
+		if player.Character then
+			found = player.Character
+		end
+	end
+	if connection then
+		connection:Disconnect()
+	end
+	return found or player.Character
+end
 
 local rarityStyle = {
-	Common = {Color = Color3.fromRGB(170, 170, 170), EmitRate = 8, AnimationId = "rbxassetid://507766388"},
-	Rare = {Color = Color3.fromRGB(66, 134, 244), EmitRate = 12, AnimationId = "rbxassetid://507766666"},
-	Epic = {Color = Color3.fromRGB(159, 72, 255), EmitRate = 18, AnimationId = "rbxassetid://507777268"},
-	Legendary = {Color = Color3.fromRGB(255, 199, 34), EmitRate = 26, AnimationId = "rbxassetid://2510196951"},
-	Mythic = {Color = Color3.fromRGB(255, 84, 107), EmitRate = 35, AnimationId = "rbxassetid://507771019"},
-	Celestial = {Color = Color3.fromRGB(255, 255, 255), EmitRate = 45, AnimationId = "rbxassetid://507772104"}
+	Common = {Color = Color3.fromRGB(170, 170, 170), EmitRate = 8, AnimationId = ANIMATIONS.Common},
+	Rare = {Color = Color3.fromRGB(66, 134, 244), EmitRate = 12, AnimationId = ANIMATIONS.Rare},
+	Epic = {Color = Color3.fromRGB(159, 72, 255), EmitRate = 18, AnimationId = ANIMATIONS.Epic},
+	Legendary = {Color = Color3.fromRGB(255, 199, 34), EmitRate = 26, AnimationId = ANIMATIONS.Legendary},
+	Mythic = {Color = Color3.fromRGB(255, 84, 107), EmitRate = 35, AnimationId = ANIMATIONS.Mythic},
+	Celestial = {Color = Color3.fromRGB(255, 255, 255), EmitRate = 45, AnimationId = ANIMATIONS.Celestial}
 }
 
 local auras: { Aura } = {
@@ -92,9 +189,17 @@ local function disableInput()
 	if controls then
 		controls:Disable()
 	end
+	local blockInputs = {
+		Enum.UserInputType.Keyboard,
+		Enum.UserInputType.MouseMovement,
+		Enum.UserInputType.MouseButton1,
+		Enum.UserInputType.MouseButton2,
+		Enum.UserInputType.MouseWheel,
+		Enum.UserInputType.Gamepad1,
+	}
 	ContextActionService:BindAction("BlockInput", function()
 		return Enum.ContextActionResult.Sink
-	end, false, unpack(Enum.PlayerActions:GetEnumItems()))
+	end, false, table.unpack(blockInputs))
 	UserInputService.ModalEnabled = true
 end
 
@@ -129,7 +234,9 @@ local function restoreCamera()
 	end
 	camera.CameraType = originalCameraType
 	camera.CameraSubject = originalCameraSubject
-	camera.CFrame = originalCFrame
+	if originalCameraType == Enum.CameraType.Scriptable then
+		camera.CFrame = originalCFrame
+	end
 end
 
 local function tween(instance: Instance, props: {[string]: any}, time: number, style: Enum.EasingStyle?, direction: Enum.EasingDirection?)
@@ -141,23 +248,36 @@ end
 
 local function applyGradient(ui: UIGradient)
 	local rotation = 0
-	RunService.RenderStepped:Connect(function(dt)
+	local connection = RunService.RenderStepped:Connect(function(dt)
 		rotation += dt * 10
 		ui.Rotation = rotation % 360
 	end)
+	return connection
 end
 
 local function clearAuraEffects()
-	if currentAuraEffect then
+	if typeof(currentAuraEffect) == "table" then
+		for _, inst in ipairs(currentAuraEffect) do
+			if typeof(inst) == "Instance" and inst.Parent then
+				inst:Destroy()
+			end
+		end
+	elseif typeof(currentAuraEffect) == "Instance" then
 		currentAuraEffect:Destroy()
-		currentAuraEffect = nil
 	end
+	currentAuraEffect = nil
 end
 
 local function applyAuraEffect(aura: Aura)
 	clearAuraEffects()
-	local character = player.Character or player.CharacterAdded:Wait()
-	local hrp = character:WaitForChild("HumanoidRootPart")
+	local character = getCharacter()
+	if not character then
+		return
+	end
+	local hrp = character:FindFirstChild("HumanoidRootPart")
+	if not hrp then
+		return
+	end
 	local attachment = Instance.new("Attachment")
 	attachment.Name = "AuraAttachment"
 	attachment.Parent = hrp
@@ -173,7 +293,7 @@ local function applyAuraEffect(aura: Aura)
 		NumberSequenceKeypoint.new(0, 0.6),
 		NumberSequenceKeypoint.new(1, 0)
 	})
-	particles.Texture = "rbxassetid://6516649271"
+	particles.Texture = ASSETS.AuraTexture
 	particles.Transparency = NumberSequence.new(0.2, 1)
 	particles.Rotation = NumberRange.new(0, 360)
 	particles.SpreadAngle = Vector2.new(15, 15)
@@ -203,18 +323,13 @@ local function applyAuraEffect(aura: Aura)
 		anim.AnimationId = aura.AnimationId
 		local track = humanoid:LoadAnimation(anim)
 		track:Play()
-		if aura.Rarity == "Legendary" or aura.Rarity == "Mythic" or aura.Rarity == "Celestial" then
+		if isEliteRarity(aura.Rarity) then
 			track:AdjustSpeed(0.9)
 			track:AdjustWeight(1)
 		end
 	end
 
-	local folder = Instance.new("Folder")
-	folder.Name = "AuraEffectContainer"
-	attachment.Parent = folder
-	auraBillboard.Parent = folder
-	folder.Parent = hrp
-	currentAuraEffect = folder
+	currentAuraEffect = {attachment, auraBillboard}
 end
 
 local ui = {}
@@ -244,7 +359,7 @@ local function createGui()
 	}
 	gradient.Rotation = 0
 	gradient.Parent = loadingFrame
-	applyGradient(gradient)
+	gradientConnection = applyGradient(gradient)
 
 	local center = Instance.new("Frame")
 	center.Name = "Center"
@@ -261,7 +376,7 @@ local function createGui()
 	loadingText.Font = Enum.Font.GothamBold
 	loadingText.TextScaled = true
 	loadingText.TextColor3 = Color3.fromRGB(255, 255, 255)
-	loadingText.Text = "Cargando sistema RNG..."
+	loadingText.Text = TEXT.LoadingMessages[1]
 	loadingText.Parent = center
 
 	local progressBack = Instance.new("Frame")
@@ -314,7 +429,7 @@ local function createGui()
 	title.BackgroundTransparency = 1
 	title.Position = UDim2.new(0, 0, 0, 0)
 	title.Size = UDim2.new(1, 0, 0.2, 0)
-	title.Text = "Auras RNG"
+	title.Text = TEXT.Title
 	title.Font = Enum.Font.GothamBlack
 	title.TextScaled = true
 	title.TextColor3 = Color3.fromRGB(255, 255, 255)
@@ -353,9 +468,9 @@ local function createGui()
 		return btn
 	end
 
-	local rollButton = createButton("RollButton", "Roll Aura", 0)
-	local invButton = createButton("InventoryButton", "Inventario", 1)
-	local settingsButton = createButton("SettingsButton", "Ajustes", 2)
+	local rollButton = createButton("RollButton", TEXT.Buttons.Roll, 0)
+	local invButton = createButton("InventoryButton", TEXT.Buttons.Inventory, 1)
+	local settingsButton = createButton("SettingsButton", TEXT.Buttons.Settings, 2)
 
 	-- Result Overlay
 	local resultFrame = Instance.new("Frame")
@@ -383,7 +498,7 @@ local function createGui()
 	resultTitle.BackgroundTransparency = 1
 	resultTitle.Position = UDim2.new(0, 0, 0.1, 0)
 	resultTitle.Size = UDim2.new(1, 0, 0.25, 0)
-	resultTitle.Text = "¡Aura Obtenida!"
+	resultTitle.Text = TEXT.ResultTitle
 	resultTitle.Font = Enum.Font.GothamBlack
 	resultTitle.TextScaled = true
 	resultTitle.TextColor3 = Color3.fromRGB(255, 255, 255)
@@ -416,7 +531,7 @@ local function createGui()
 	resultButton.AnchorPoint = Vector2.new(0.5, 0)
 	resultButton.Position = UDim2.new(0.5, 0, 0.75, 0)
 	resultButton.Size = UDim2.new(0.6, 0, 0.18, 0)
-	resultButton.Text = "Continuar"
+	resultButton.Text = TEXT.Continue
 	resultButton.Font = Enum.Font.GothamSemibold
 	resultButton.TextScaled = true
 	resultButton.TextColor3 = Color3.fromRGB(255, 255, 255)
@@ -443,7 +558,7 @@ local function createGui()
 	local invTitle = Instance.new("TextLabel")
 	invTitle.BackgroundTransparency = 1
 	invTitle.Size = UDim2.new(1, 0, 0.12, 0)
-	invTitle.Text = "Inventario de Auras"
+	invTitle.Text = TEXT.InventoryTitle
 	invTitle.Font = Enum.Font.GothamBlack
 	invTitle.TextScaled = true
 	invTitle.TextColor3 = Color3.fromRGB(255, 255, 255)
@@ -472,7 +587,7 @@ local function createGui()
 	closeInv.AnchorPoint = Vector2.new(0.5, 1)
 	closeInv.Position = UDim2.new(0.5, 0, 1, -10)
 	closeInv.Size = UDim2.new(0.3, 0, 0.1, 0)
-	closeInv.Text = "Cerrar"
+	closeInv.Text = TEXT.Close
 	closeInv.Font = Enum.Font.GothamSemibold
 	closeInv.TextScaled = true
 	closeInv.TextColor3 = Color3.fromRGB(255, 255, 255)
@@ -499,7 +614,7 @@ local function createGui()
 	local settingsTitle = Instance.new("TextLabel")
 	settingsTitle.BackgroundTransparency = 1
 	settingsTitle.Size = UDim2.new(1, 0, 0.18, 0)
-	settingsTitle.Text = "Ajustes"
+	settingsTitle.Text = TEXT.SettingsTitle
 	settingsTitle.Font = Enum.Font.GothamBlack
 	settingsTitle.TextScaled = true
 	settingsTitle.TextColor3 = Color3.fromRGB(255, 255, 255)
@@ -510,7 +625,7 @@ local function createGui()
 	blurToggle.AnchorPoint = Vector2.new(0.5, 0)
 	blurToggle.Position = UDim2.new(0.5, 0, 0.25, 0)
 	blurToggle.Size = UDim2.new(0.7, 0, 0.18, 0)
-	blurToggle.Text = "Blur: Activado"
+	blurToggle.Text = TEXT.BlurOn
 	blurToggle.Font = Enum.Font.GothamSemibold
 	blurToggle.TextScaled = true
 	blurToggle.TextColor3 = Color3.fromRGB(255, 255, 255)
@@ -526,7 +641,7 @@ local function createGui()
 	musicToggle.AnchorPoint = Vector2.new(0.5, 0)
 	musicToggle.Position = UDim2.new(0.5, 0, 0.47, 0)
 	musicToggle.Size = UDim2.new(0.7, 0, 0.18, 0)
-	musicToggle.Text = "Música: Placeholder"
+	musicToggle.Text = TEXT.MusicOff
 	musicToggle.Font = Enum.Font.GothamSemibold
 	musicToggle.TextScaled = true
 	musicToggle.TextColor3 = Color3.fromRGB(255, 255, 255)
@@ -542,7 +657,7 @@ local function createGui()
 	closeSettings.AnchorPoint = Vector2.new(0.5, 1)
 	closeSettings.Position = UDim2.new(0.5, 0, 0.95, 0)
 	closeSettings.Size = UDim2.new(0.4, 0, 0.15, 0)
-	closeSettings.Text = "Cerrar"
+	closeSettings.Text = TEXT.Close
 	closeSettings.Font = Enum.Font.GothamSemibold
 	closeSettings.TextScaled = true
 	closeSettings.TextColor3 = Color3.fromRGB(255, 255, 255)
@@ -622,11 +737,18 @@ local gui = createGui()
 
 local function updateInventoryUI()
 	local list = ui.InventoryList
-	list:ClearAllChildren()
-	local layout = Instance.new("UIListLayout")
-	layout.Padding = UDim.new(0, 6)
-	layout.SortOrder = Enum.SortOrder.LayoutOrder
-	layout.Parent = list
+	local layout = list:FindFirstChildOfClass("UIListLayout")
+	if not layout then
+		layout = Instance.new("UIListLayout")
+		layout.Padding = UDim.new(0, 6)
+		layout.SortOrder = Enum.SortOrder.LayoutOrder
+		layout.Parent = list
+	end
+	for _, child in ipairs(list:GetChildren()) do
+		if not child:IsA("UIListLayout") then
+			child:Destroy()
+		end
+	end
 	for index, aura in ipairs(auraInventory) do
 		local item = Instance.new("TextLabel")
 		item.Name = "Aura_" .. index
@@ -652,6 +774,10 @@ local function fadeLoadingOut()
 	tween(ui.ProgressFill, {BackgroundTransparency = 1}, 0.6)
 	task.wait(0.8)
 	ui.LoadingFrame.Visible = false
+	if gradientConnection then
+		gradientConnection:Disconnect()
+		gradientConnection = nil
+	end
 	ui.MenuFrame.Visible = true
 	ui.MenuContainer.Visible = true
 	ui.MenuContainer.BackgroundTransparency = 1
@@ -666,10 +792,10 @@ local function playLoading()
 	disableInput()
 	setMenuCamera()
 	local steps = {
-		{msg = "Cargando sistema RNG…", progress = 0.25},
-		{msg = "Inicializando auras…", progress = 0.55},
-		{msg = "Preparando animaciones…", progress = 0.8},
-		{msg = "Todo listo. ¡Disfruta!", progress = 1}
+		{msg = TEXT.LoadingMessages[1], progress = 0.25},
+		{msg = TEXT.LoadingMessages[2], progress = 0.55},
+		{msg = TEXT.LoadingMessages[3], progress = 0.8},
+		{msg = TEXT.LoadingMessages[4], progress = 1}
 	}
 	for _, step in ipairs(steps) do
 		ui.LoadingText.Text = step.msg
@@ -707,19 +833,23 @@ local function cinematicEffects(aura: Aura, revealTime: number)
 		local targetBlur = 10
 		if aura.Rarity == "Legendary" then
 			targetBlur = 14
-		elseif aura.Rarity == "Mythic" or aura.Rarity == "Celestial" then
+		elseif isEliteRarity(aura.Rarity) then
 			targetBlur = 18
 		end
 		tween(blur, {Size = targetBlur}, 0.4)
 	end
-	if aura.Rarity == "Epic" or aura.Rarity == "Legendary" or aura.Rarity == "Mythic" or aura.Rarity == "Celestial" then
+	if isCinematicRarity(aura.Rarity) then
 		camera.CameraType = Enum.CameraType.Scriptable
-		local character = player.Character or player.CharacterAdded:Wait()
-		local hrp = character:WaitForChild("HumanoidRootPart")
-		local startCFrame = hrp.CFrame * CFrame.new(0, 3, 14)
-		local endCFrame = hrp.CFrame * CFrame.new(0, 2, 6) * CFrame.Angles(0, math.rad(180), 0)
-		camera.CFrame = startCFrame
-		tween(camera, {CFrame = endCFrame}, revealTime)
+		local character = getCharacter()
+		if character then
+			local hrp = character:FindFirstChild("HumanoidRootPart")
+			if hrp then
+			local startCFrame = hrp.CFrame * CFrame.new(0, 3, 14)
+			local endCFrame = hrp.CFrame * CFrame.new(0, 2, 6) * CFrame.Angles(0, math.rad(180), 0)
+			camera.CFrame = startCFrame
+			tween(camera, {CFrame = endCFrame}, revealTime)
+		end
+	end
 	end
 end
 
@@ -761,22 +891,30 @@ local function rollAuraFlow()
 	showResult(aura)
 end
 
-local blurEnabled = true
 ui.BlurToggle.MouseButton1Click:Connect(function()
 	blurEnabled = not blurEnabled
 	if blurEnabled then
-		ui.BlurToggle.Text = "Blur: Activado"
+		ui.BlurToggle.Text = TEXT.BlurOn
 		ui.BlurToggle.BackgroundColor3 = Color3.fromRGB(40, 120, 255)
 		blur.Size = 0
 	else
-		ui.BlurToggle.Text = "Blur: Desactivado"
+		ui.BlurToggle.Text = TEXT.BlurOff
 		ui.BlurToggle.BackgroundColor3 = Color3.fromRGB(80, 80, 80)
 		blur.Size = 0
 	end
 end)
 
 ui.MusicToggle.MouseButton1Click:Connect(function()
-	ui.MusicToggle.Text = "Música: Próximamente"
+	musicEnabled = not musicEnabled
+	if musicEnabled then
+		ui.MusicToggle.Text = TEXT.MusicOn
+		ui.MusicToggle.BackgroundColor3 = Color3.fromRGB(50, 120, 255)
+		musicSound:Play()
+	else
+		ui.MusicToggle.Text = TEXT.MusicOff
+		ui.MusicToggle.BackgroundColor3 = Color3.fromRGB(35, 37, 55)
+		musicSound:Stop()
+	end
 end)
 
 ui.CloseSettings.MouseButton1Click:Connect(function()
