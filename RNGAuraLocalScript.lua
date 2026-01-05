@@ -39,6 +39,8 @@ local musicEnabled = false
 local equippedAura: Aura? = nil
 local activeTracks: {AnimationTrack} = {}
 local animConnections: {RBXScriptConnection} = {}
+local WALK_SPEED_THRESHOLD = 1
+local RUN_SPEED_THRESHOLD = 12
 
 local ASSETS = {
 	AuraTexture = "rbxassetid://6516649271",
@@ -54,43 +56,28 @@ local ANIMATIONS = {
 	Celestial = "rbxassetid://507772104",
 }
 
+local BASE_MOVES = {
+	Walk = "rbxassetid://913402848",
+	Run = "rbxassetid://913376220",
+	Jump = "rbxassetid://507765000",
+}
+
+local function buildAnimSet(idleId: string)
+	return {
+		Idle = idleId,
+		Walk = BASE_MOVES.Walk,
+		Run = BASE_MOVES.Run,
+		Jump = BASE_MOVES.Jump,
+	}
+end
+
 local ANIM_SETS = {
-	Common = {
-		Idle = "rbxassetid://507766666",
-		Walk = "rbxassetid://913402848",
-		Run = "rbxassetid://913376220",
-		Jump = "rbxassetid://507765000",
-	},
-	Rare = {
-		Idle = "rbxassetid://913389880",
-		Walk = "rbxassetid://913402848",
-		Run = "rbxassetid://913376220",
-		Jump = "rbxassetid://507765000",
-	},
-	Epic = {
-		Idle = "rbxassetid://746604657",
-		Walk = "rbxassetid://913402848",
-		Run = "rbxassetid://913376220",
-		Jump = "rbxassetid://507765000",
-	},
-	Legendary = {
-		Idle = "rbxassetid://2510230571",
-		Walk = "rbxassetid://913402848",
-		Run = "rbxassetid://913376220",
-		Jump = "rbxassetid://507765000",
-	},
-	Mythic = {
-		Idle = "rbxassetid://2510196951",
-		Walk = "rbxassetid://913402848",
-		Run = "rbxassetid://913376220",
-		Jump = "rbxassetid://507765000",
-	},
-	Celestial = {
-		Idle = "rbxassetid://507772104",
-		Walk = "rbxassetid://913402848",
-		Run = "rbxassetid://913376220",
-		Jump = "rbxassetid://507765000",
-	},
+	Common = buildAnimSet("rbxassetid://507766666"),
+	Rare = buildAnimSet("rbxassetid://913389880"),
+	Epic = buildAnimSet("rbxassetid://746604657"),
+	Legendary = buildAnimSet("rbxassetid://2510230571"),
+	Mythic = buildAnimSet("rbxassetid://2510196951"),
+	Celestial = buildAnimSet("rbxassetid://507772104"),
 }
 
 local TEXT = {
@@ -115,6 +102,8 @@ local TEXT = {
 	BlurOff = "Blur: Desactivado",
 	MusicOn = "Música: Activada",
 	MusicOff = "Música: Desactivada",
+	Equip = "Equipar",
+	Equipped = "Equipado",
 }
 
 local eliteRarityLookup = {
@@ -351,6 +340,7 @@ local function applyMovementAnimations(aura: Aura)
 		local anim = Instance.new("Animation")
 		anim.AnimationId = id
 		local track = humanoid:LoadAnimation(anim)
+		anim:Destroy()
 		track.Priority = Enum.AnimationPriority.Movement
 		track.Looped = looped
 		table.insert(activeTracks, track)
@@ -378,9 +368,9 @@ local function applyMovementAnimations(aura: Aura)
 	end
 
 	local runConn = humanoid.Running:Connect(function(speed)
-		if speed < 1 then
+		if speed < WALK_SPEED_THRESHOLD then
 			playTrack(idleTrack)
-		elseif speed < 12 then
+		elseif speed < RUN_SPEED_THRESHOLD then
 			playTrack(walkTrack or idleTrack)
 		else
 			playTrack(runTrack or walkTrack or idleTrack)
@@ -918,7 +908,7 @@ local function updateInventoryUI()
 		equipBtn.AnchorPoint = Vector2.new(1, 0.5)
 		equipBtn.Position = UDim2.new(0.97, 0, 0.5, 0)
 		equipBtn.Size = UDim2.new(0.32, 0, 0.7, 0)
-		equipBtn.Text = (equippedAura and equippedAura.Name == aura.Name) and "Equipado" or "Equipar"
+		equipBtn.Text = (equippedAura and equippedAura.Name == aura.Name) and TEXT.Equipped or TEXT.Equip
 		equipBtn.Font = Enum.Font.GothamSemibold
 		equipBtn.TextScaled = true
 		equipBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
