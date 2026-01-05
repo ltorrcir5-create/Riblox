@@ -36,6 +36,10 @@ blur.Parent = Lighting
 local blurEnabled = true
 local gradientConnection: RBXScriptConnection? = nil
 local musicEnabled = false
+local equippedAura: Aura? = nil
+local activeTracks: {AnimationTrack} = {}
+local animConnections: {RBXScriptConnection} = {}
+
 local ASSETS = {
 	AuraTexture = "rbxassetid://6516649271",
 	Music = "rbxassetid://1843521328",
@@ -48,6 +52,45 @@ local ANIMATIONS = {
 	Legendary = "rbxassetid://2510196951",
 	Mythic = "rbxassetid://507771019",
 	Celestial = "rbxassetid://507772104",
+}
+
+local ANIM_SETS = {
+	Common = {
+		Idle = "rbxassetid://507766666",
+		Walk = "rbxassetid://913402848",
+		Run = "rbxassetid://913376220",
+		Jump = "rbxassetid://507765000",
+	},
+	Rare = {
+		Idle = "rbxassetid://913389880",
+		Walk = "rbxassetid://913402848",
+		Run = "rbxassetid://913376220",
+		Jump = "rbxassetid://507765000",
+	},
+	Epic = {
+		Idle = "rbxassetid://746604657",
+		Walk = "rbxassetid://913402848",
+		Run = "rbxassetid://913376220",
+		Jump = "rbxassetid://507765000",
+	},
+	Legendary = {
+		Idle = "rbxassetid://2510230571",
+		Walk = "rbxassetid://913402848",
+		Run = "rbxassetid://913376220",
+		Jump = "rbxassetid://507765000",
+	},
+	Mythic = {
+		Idle = "rbxassetid://2510196951",
+		Walk = "rbxassetid://913402848",
+		Run = "rbxassetid://913376220",
+		Jump = "rbxassetid://507765000",
+	},
+	Celestial = {
+		Idle = "rbxassetid://507772104",
+		Walk = "rbxassetid://913402848",
+		Run = "rbxassetid://913376220",
+		Jump = "rbxassetid://507765000",
+	},
 }
 
 local TEXT = {
@@ -136,14 +179,14 @@ local rarityStyle = {
 }
 
 local auras: { Aura } = {
-	{Name = "Breeze", Rarity = "Common", Chance = 46, Color = rarityStyle.Common.Color, AnimationId = rarityStyle.Common.AnimationId},
-	{Name = "Spark", Rarity = "Common", Chance = 25, Color = rarityStyle.Common.Color, AnimationId = rarityStyle.Common.AnimationId},
-	{Name = "Ocean Pulse", Rarity = "Rare", Chance = 12, Color = rarityStyle.Rare.Color, AnimationId = rarityStyle.Rare.AnimationId},
-	{Name = "Crystal Bloom", Rarity = "Rare", Chance = 7, Color = rarityStyle.Rare.Color, AnimationId = rarityStyle.Rare.AnimationId},
-	{Name = "Eclipse", Rarity = "Epic", Chance = 5, Color = rarityStyle.Epic.Color, AnimationId = rarityStyle.Epic.AnimationId},
-	{Name = "Phoenix Fire", Rarity = "Legendary", Chance = 2.5, Color = rarityStyle.Legendary.Color, AnimationId = rarityStyle.Legendary.AnimationId},
-	{Name = "Void Emperor", Rarity = "Mythic", Chance = 1.3, Color = rarityStyle.Mythic.Color, AnimationId = rarityStyle.Mythic.AnimationId},
-	{Name = "Celestial Nova", Rarity = "Celestial", Chance = 0.2, Color = rarityStyle.Celestial.Color, AnimationId = rarityStyle.Celestial.AnimationId}
+	{Name = "Breeze", Rarity = "Common", Chance = 46, Color = rarityStyle.Common.Color, AnimationId = rarityStyle.Common.AnimationId, Animations = ANIM_SETS.Common},
+	{Name = "Spark", Rarity = "Common", Chance = 25, Color = rarityStyle.Common.Color, AnimationId = rarityStyle.Common.AnimationId, Animations = ANIM_SETS.Common},
+	{Name = "Ocean Pulse", Rarity = "Rare", Chance = 12, Color = rarityStyle.Rare.Color, AnimationId = rarityStyle.Rare.AnimationId, Animations = ANIM_SETS.Rare},
+	{Name = "Crystal Bloom", Rarity = "Rare", Chance = 7, Color = rarityStyle.Rare.Color, AnimationId = rarityStyle.Rare.AnimationId, Animations = ANIM_SETS.Rare},
+	{Name = "Eclipse", Rarity = "Epic", Chance = 5, Color = rarityStyle.Epic.Color, AnimationId = rarityStyle.Epic.AnimationId, Animations = ANIM_SETS.Epic},
+	{Name = "Phoenix Fire", Rarity = "Legendary", Chance = 2.5, Color = rarityStyle.Legendary.Color, AnimationId = rarityStyle.Legendary.AnimationId, Animations = ANIM_SETS.Legendary},
+	{Name = "Void Emperor", Rarity = "Mythic", Chance = 1.3, Color = rarityStyle.Mythic.Color, AnimationId = rarityStyle.Mythic.AnimationId, Animations = ANIM_SETS.Mythic},
+	{Name = "Celestial Nova", Rarity = "Celestial", Chance = 0.2, Color = rarityStyle.Celestial.Color, AnimationId = rarityStyle.Celestial.AnimationId, Animations = ANIM_SETS.Celestial}
 }
 
 local function sumChances(): number
@@ -268,6 +311,94 @@ local function clearAuraEffects()
 	currentAuraEffect = nil
 end
 
+local function disconnectAnimConnections()
+	for _, c in ipairs(animConnections) do
+		c:Disconnect()
+	end
+	animConnections = {}
+end
+
+local function stopActiveTracks()
+	for _, track in ipairs(activeTracks) do
+		if track.IsPlaying then
+			track:Stop()
+		end
+		track:Destroy()
+	end
+	activeTracks = {}
+end
+
+local function applyMovementAnimations(aura: Aura)
+	stopActiveTracks()
+	disconnectAnimConnections()
+	local animSet = aura.Animations
+	if not animSet then
+		return
+	end
+	local character = getCharacter()
+	if not character then
+		return
+	end
+	local humanoid = character:FindFirstChildOfClass("Humanoid")
+	if not humanoid then
+		return
+	end
+
+	local function createTrack(id: string?, looped: boolean)
+		if not id then
+			return nil
+		end
+		local anim = Instance.new("Animation")
+		anim.AnimationId = id
+		local track = humanoid:LoadAnimation(anim)
+		track.Priority = Enum.AnimationPriority.Movement
+		track.Looped = looped
+		table.insert(activeTracks, track)
+		return track
+	end
+
+	local idleTrack = createTrack(animSet.Idle, true)
+	local walkTrack = createTrack(animSet.Walk, true)
+	local runTrack = createTrack(animSet.Run, true)
+	local jumpTrack = createTrack(animSet.Jump, false)
+	local currentTrack: AnimationTrack? = nil
+
+	local function playTrack(track: AnimationTrack?)
+		if currentTrack and currentTrack ~= track then
+			currentTrack:Stop()
+		end
+		currentTrack = track
+		if track and not track.IsPlaying then
+			track:Play()
+		end
+	end
+
+	if idleTrack then
+		playTrack(idleTrack)
+	end
+
+	local runConn = humanoid.Running:Connect(function(speed)
+		if speed < 1 then
+			playTrack(idleTrack)
+		elseif speed < 12 then
+			playTrack(walkTrack or idleTrack)
+		else
+			playTrack(runTrack or walkTrack or idleTrack)
+		end
+	end)
+
+	local stateConn = humanoid.StateChanged:Connect(function(_, newState)
+		if newState == Enum.HumanoidStateType.Jumping or newState == Enum.HumanoidStateType.Freefall then
+			playTrack(jumpTrack or runTrack or walkTrack or idleTrack)
+		elseif newState == Enum.HumanoidStateType.Landed then
+			playTrack(idleTrack)
+		end
+	end)
+
+	table.insert(animConnections, runConn)
+	table.insert(animConnections, stateConn)
+end
+
 local function applyAuraEffect(aura: Aura)
 	clearAuraEffects()
 	local character = getCharacter()
@@ -330,6 +461,13 @@ local function applyAuraEffect(aura: Aura)
 	end
 
 	currentAuraEffect = {attachment, auraBillboard}
+end
+
+local function setEquippedAura(aura: Aura)
+	equippedAura = aura
+	applyAuraEffect(aura)
+	applyMovementAnimations(aura)
+	updateInventoryUI()
 end
 
 local ui = {}
@@ -750,18 +888,51 @@ local function updateInventoryUI()
 		end
 	end
 	for index, aura in ipairs(auraInventory) do
-		local item = Instance.new("TextLabel")
+		local item = Instance.new("Frame")
 		item.Name = "Aura_" .. index
-		item.Size = UDim2.new(1, 0, 0, 38)
+		item.Size = UDim2.new(1, 0, 0, 48)
 		item.BackgroundColor3 = Color3.fromRGB(26, 28, 38)
-		item.Text = aura.Name .. " - " .. aura.Rarity
-		item.TextScaled = true
-		item.Font = Enum.Font.GothamSemibold
-		item.TextColor3 = aura.Color
 		item.BorderSizePixel = 0
+
+		if equippedAura and equippedAura.Name == aura.Name then
+			item.BackgroundColor3 = aura.Color:Lerp(Color3.fromRGB(20, 20, 30), 0.4)
+		end
+
 		local corner = Instance.new("UICorner")
 		corner.CornerRadius = UDim.new(0, 8)
 		corner.Parent = item
+
+		local label = Instance.new("TextLabel")
+		label.BackgroundTransparency = 1
+		label.Size = UDim2.new(0.6, 0, 1, 0)
+		label.Position = UDim2.new(0.03, 0, 0, 0)
+		label.Text = aura.Name .. " - " .. aura.Rarity
+		label.TextScaled = true
+		label.Font = Enum.Font.GothamSemibold
+		label.TextColor3 = aura.Color
+		label.TextXAlignment = Enum.TextXAlignment.Left
+		label.Parent = item
+
+		local equipBtn = Instance.new("TextButton")
+		equipBtn.Name = "Equip"
+		equipBtn.AnchorPoint = Vector2.new(1, 0.5)
+		equipBtn.Position = UDim2.new(0.97, 0, 0.5, 0)
+		equipBtn.Size = UDim2.new(0.32, 0, 0.7, 0)
+		equipBtn.Text = (equippedAura and equippedAura.Name == aura.Name) and "Equipado" or "Equipar"
+		equipBtn.Font = Enum.Font.GothamSemibold
+		equipBtn.TextScaled = true
+		equipBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
+		equipBtn.BackgroundColor3 = equippedAura and equippedAura.Name == aura.Name and Color3.fromRGB(40, 160, 80) or Color3.fromRGB(50, 120, 255)
+		equipBtn.BorderSizePixel = 0
+		local equipCorner = Instance.new("UICorner")
+		equipCorner.CornerRadius = UDim.new(0, 8)
+		equipCorner.Parent = equipBtn
+		equipBtn.Parent = item
+
+		equipBtn.MouseButton1Click:Connect(function()
+			setEquippedAura(aura)
+		end)
+
 		item.Parent = list
 	end
 	list.CanvasSize = UDim2.new(0, 0, 0, layout.AbsoluteContentSize.Y + 10)
@@ -783,6 +954,17 @@ local function fadeLoadingOut()
 	ui.MenuContainer.BackgroundTransparency = 1
 	ui.MenuContainer.Position = UDim2.new(0.5, 0, 0.6, 0)
 	tween(ui.MenuContainer, {BackgroundTransparency = 0.05, Position = UDim2.new(0.5, 0, 0.55, 0)}, 0.6)
+	setMenuCamera()
+	enableInput()
+end
+
+local function closeAllPanels()
+	ui.InventoryFrame.Visible = false
+	ui.SettingsFrame.Visible = false
+	ui.ResultFrame.Visible = false
+	ui.ResultCard.Visible = false
+	ui.MenuContainer.Visible = true
+	state = "Menu"
 	setMenuCamera()
 	enableInput()
 end
@@ -886,8 +1068,7 @@ local function rollAuraFlow()
 	ui.RollingFrame.Visible = false
 
 	table.insert(auraInventory, aura)
-	updateInventoryUI()
-	applyAuraEffect(aura)
+	setEquippedAura(aura)
 	showResult(aura)
 end
 
@@ -976,6 +1157,8 @@ UserInputService.InputBegan:Connect(function(input, processed)
 	if input.KeyCode == Enum.KeyCode.F5 then
 		restoreCamera()
 		enableInput()
+	elseif input.KeyCode == Enum.KeyCode.Escape or input.KeyCode == Enum.KeyCode.Backspace then
+		closeAllPanels()
 	end
 end)
 
