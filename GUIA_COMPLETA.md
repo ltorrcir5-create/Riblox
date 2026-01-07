@@ -240,7 +240,7 @@ local function intermision()
             tiempoRestante = TIEMPO_INTERMISION  -- Reiniciar si no hay suficientes
         end
         
-        wait(1)
+        task.wait(1)
         tiempoRestante = tiempoRestante - 1
     end
 end
@@ -251,14 +251,14 @@ local function iniciarRonda()
     tiempoRestante = TIEMPO_JUEGO
     
     enviarMensaje("¡La ronda ha comenzado!")
-    wait(3)
+    task.wait(3)
     
     -- Aquí más adelante asignaremos roles y teletransportaremos jugadores
     
     -- Cuenta regresiva del juego
     while tiempoRestante > 0 and estadoJuego == "Playing" do
         enviarMensaje("Tiempo restante: " .. tiempoRestante .. " segundos")
-        wait(1)
+        task.wait(1)
         tiempoRestante = tiempoRestante - 1
     end
     
@@ -271,7 +271,7 @@ end
 function terminarRonda(razon)
     estadoJuego = "Ending"
     enviarMensaje(razon)
-    wait(5)
+    task.wait(5)
 end
 
 -- FUNCIÓN: Bucle principal del juego
@@ -310,6 +310,12 @@ buclePrincipal()
 - **ModuleScript**: Código reutilizable
 
 Este es un **Script** normal porque controla el flujo del juego para todos.
+
+**Nota sobre `task.wait()`:**
+- `task.wait()` pausa el script por el número de segundos indicado
+- Es la versión moderna y más eficiente de `wait()`
+- Ejemplo: `task.wait(1)` pausa por 1 segundo
+- Sin `task.wait()`, los bucles se ejecutarían infinitamente sin parar, bloqueando el juego
 
 ### Paso 5: Probar el Sistema
 
@@ -556,12 +562,12 @@ local function atacar()
     -- Animación simple: mover el cuchillo
     local originalPos = handle.CFrame
     handle.CFrame = handle.CFrame * CFrame.new(0, 0, -2)  -- Mover hacia adelante
-    wait(0.2)
+    task.wait(0.2)
     handle.CFrame = originalPos
     
     conexion:Disconnect()
     
-    wait(COOLDOWN)
+    task.wait(COOLDOWN)
     puedeAtacar = true
 end
 
@@ -651,7 +657,7 @@ local function configurarGenerador(generador)
                 if not activado.Value then
                     print(jugador.Name .. " activando " .. generador.Name)
                     
-                    wait(TIEMPO_ACTIVACION)
+                    task.wait(TIEMPO_ACTIVACION)
                     
                     activado.Value = true
                     generador.Color = Color3.new(0, 1, 0)  -- Verde
@@ -754,7 +760,7 @@ end
 -- FUNCIÓN: Monitorear juego
 local function monitorearJuego()
     while estadoJuego == "Playing" do
-        wait(1)
+        task.wait(1)
         
         local supervivientes = verificarSupervivientes()
         if supervivientes == 0 then
@@ -794,7 +800,7 @@ local Players = game:GetService("Players")
 
 local function crearUI(jugador)
     jugador.CharacterAdded:Connect(function(character)
-        wait(1)
+        task.wait(1)
         
         if jugador:FindFirstChild("PlayerGui") then
             local playerGui = jugador.PlayerGui
@@ -919,7 +925,7 @@ Mejora tu mapa:
 - Un objeto no existe, verifica el nombre
 
 **"Script timeout"**:
-- Bucle infinito sin wait(), agrega wait()
+- Bucle infinito sin task.wait(), agrega task.wait()
 
 **"Unable to cast"**:
 - Tipo de dato incorrecto

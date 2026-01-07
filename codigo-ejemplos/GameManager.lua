@@ -260,7 +260,7 @@ end
 -- FUNCIÓN: Monitorear estado del juego
 local function monitorearJuego()
 	while estadoJuego == "Playing" do
-		wait(1)
+		task.wait(1)
 
 		-- Verificar si quedan supervivientes
 		local supervivientes = verificarSupervivientes()
@@ -297,7 +297,7 @@ local function intermision()
 			tiempoRestante = TIEMPO_INTERMISION  -- Reiniciar si no hay suficientes
 		end
 
-		wait(1)
+		task.wait(1)
 		tiempoRestante = tiempoRestante - 1
 	end
 end
@@ -308,17 +308,17 @@ local function iniciarRonda()
 	tiempoRestante = TIEMPO_JUEGO
 
 	enviarMensaje("¡La ronda ha comenzado!")
-	wait(2)
+	task.wait(2)
 
 	-- Asignar roles
 	local cazador = asignarRoles()
 	enviarMensaje("¡Los roles han sido asignados!")
-	wait(2)
+	task.wait(2)
 
 	-- Teletransportar jugadores
 	teletransportarMapa()
 	enviarMensaje("¡A jugar!")
-	wait(2)
+	task.wait(2)
 	
 	-- Iniciar monitoreo del juego
 	spawn(monitorearJuego)
@@ -326,7 +326,7 @@ local function iniciarRonda()
 	-- Cuenta regresiva del juego
 	while tiempoRestante > 0 and estadoJuego == "Playing" do
 		enviarMensaje("Tiempo restante: " .. tiempoRestante .. " segundos")
-		wait(1)
+		task.wait(1)
 		tiempoRestante = tiempoRestante - 1
 	end
 
@@ -339,7 +339,7 @@ end
 function terminarRonda(razon)
 	estadoJuego = "Ending"
 	enviarMensaje(razon)
-	wait(5)
+	task.wait(5)
 end
 
 -- FUNCIÓN: Bucle principal del juego

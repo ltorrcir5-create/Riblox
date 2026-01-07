@@ -36,7 +36,7 @@ local function configurarGenerador(generador)
 					end
 
 					-- Esperar tiempo de activación
-					wait(TIEMPO_ACTIVACION)
+					task.wait(TIEMPO_ACTIVACION)
 
 					-- Activar generador
 					activado.Value = true

@@ -8,7 +8,7 @@ local Players = game:GetService("Players")
 -- FUNCIÓN: Crear UI para un jugador
 local function crearUI(jugador)
 	jugador.CharacterAdded:Connect(function(character)
-		wait(1)  -- Esperar a que cargue
+		task.wait(1)  -- Esperar a que cargue
 
 		if jugador:FindFirstChild("PlayerGui") then
 			local playerGui = jugador.PlayerGui

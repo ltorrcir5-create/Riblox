@@ -40,12 +40,12 @@ local function atacar()
 	-- Animación simple: mover el cuchillo
 	local originalPos = handle.CFrame
 	handle.CFrame = handle.CFrame * CFrame.new(0, 0, -2)  -- Mover hacia adelante
-	wait(0.2)
+	task.wait(0.2)
 	handle.CFrame = originalPos
 
 	conexion:Disconnect()
 
-	wait(COOLDOWN)
+	task.wait(COOLDOWN)
 	puedeAtacar = true
 end
 
