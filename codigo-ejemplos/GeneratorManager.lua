@@ -24,29 +24,35 @@ local function configurarGenerador(generador)
 			-- Solo supervivientes pueden activar
 			if jugador:FindFirstChild("Rol") and jugador.Rol.Value == "Superviviente" then
 				if not activado.Value then
-					-- Iniciar activación
-					print(jugador.Name .. " está activando " .. generador.Name)
-
-					-- Mensaje al jugador
-					if jugador:FindFirstChild("PlayerGui") then
-						local screenGui = jugador.PlayerGui:FindFirstChild("MensajeGui")
-						if screenGui and screenGui:FindFirstChild("Mensaje") then
-							screenGui.Mensaje.Text = "Activando generador... (" .. TIEMPO_ACTIVACION .. "s)"
-						end
-					end
-
-					-- Esperar tiempo de activación
-					task.wait(TIEMPO_ACTIVACION)
-
-					-- Activar generador
+					-- Marcar como en proceso para evitar doble activación
 					activado.Value = true
-					generador.Color = Color3.new(0, 1, 0)  -- Verde = activado
-					generador.Material = Enum.Material.Neon
+					
+					-- Usar task.spawn para ejecutar en paralelo sin bloquear otros eventos
+					-- Esto permite que múltiples generadores se activen simultáneamente
+					task.spawn(function()
+						-- Iniciar activación
+						print(jugador.Name .. " está activando " .. generador.Name)
 
-					print(generador.Name .. " activado!")
+						-- Mensaje al jugador
+						if jugador:FindFirstChild("PlayerGui") then
+							local screenGui = jugador.PlayerGui:FindFirstChild("MensajeGui")
+							if screenGui and screenGui:FindFirstChild("Mensaje") then
+								screenGui.Mensaje.Text = "Activando generador... (" .. TIEMPO_ACTIVACION .. "s)"
+							end
+						end
 
-					-- Verificar si todos están activados
-					verificarVictoria()
+						-- Esperar tiempo de activación
+						task.wait(TIEMPO_ACTIVACION)
+
+						-- Activar generador visualmente
+						generador.Color = Color3.new(0, 1, 0)  -- Verde = activado
+						generador.Material = Enum.Material.Neon
+
+						print(generador.Name .. " activado!")
+
+						-- Verificar si todos están activados
+						verificarVictoria()
+					end)
 				end
 			else
 				print(jugador.Name .. " no puede activar generadores (es cazador o no tiene rol)")
