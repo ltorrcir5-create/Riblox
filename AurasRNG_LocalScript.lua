@@ -1,56 +1,221 @@
 --[[
 	================================================================================================
-	AURAS RNG - LocalScript (Estilo Sols RNG)
+	AURAS RNG - LocalScript AAA (Estilo Sols RNG Premium)
 	================================================================================================
 	
-	Este LocalScript implementa un sistema completo de RNG de auras inspirado en Sols RNG.
+	Sistema RNG de auras de calidad AAA para Roblox Studio.
+	Diseñado como base para un juego RNG comercial exitoso.
 	
 	INSTALACIÓN:
 	1. Copiar este script completo
 	2. En Roblox Studio, ir a StarterPlayer > StarterPlayerScripts
 	3. Crear un nuevo LocalScript y pegar el código
-	4. ¡Listo para jugar!
 	
-	CARACTERÍSTICAS:
-	- Sistema RNG con probabilidades weighted reales
-	- 8 niveles de rareza (Common a Unique)
-	- Efectos visuales únicos por rareza
-	- UI completa creada por código
-	- Animaciones y VFX al girar
-	- Limpieza automática de auras anteriores
+	ARQUITECTURA:
+	├── Configuración centralizada (CONFIG, RARITY_CONFIG, AURAS)
+	├── Sistema RNG avanzado (weighted, anti-duplicados, luck multipliers)
+	├── Sistema de Auras visuales (partículas, beams, highlights)
+	├── VFX cinematográficos (camera shake, screen flash, reveal dramático)
+	├── UI AAA (hover effects, tweens suaves, responsive)
+	├── Gestión de personaje (CharacterAdded, cleanup automático)
+	└── Sistema de Boosts (estructura para luck/gamepasses)
+	
+	CARACTERÍSTICAS PREMIUM:
+	- Sistema anti-duplicados consecutivos
+	- Suavizado de RNG (evita streaks injustos)
+	- Estructura para luck multipliers y boosts temporales
+	- VFX escalados por rareza con TweenService
+	- Camera shake local en reveals raros
+	- UI con hover effects y feedback visual
+	- Limpieza automática con Debris
+	- Optimizado para mantener FPS estables
 	
 	Autor: Copilot
-	Versión: 1.0
+	Versión: 2.0 AAA
 	================================================================================================
 ]]
 
 -- ================================================================================================
--- SERVICIOS DE ROBLOX
+-- SECCIÓN 1: SERVICIOS DE ROBLOX
 -- ================================================================================================
 local Players = game:GetService("Players")
 local TweenService = game:GetService("TweenService")
 local RunService = game:GetService("RunService")
+local Debris = game:GetService("Debris")
 
 -- ================================================================================================
--- REFERENCIAS DEL JUGADOR
+-- SECCIÓN 2: REFERENCIAS DEL JUGADOR
 -- ================================================================================================
 local LocalPlayer = Players.LocalPlayer
 local PlayerGui = LocalPlayer:WaitForChild("PlayerGui")
+local Camera = workspace.CurrentCamera
 
 -- ================================================================================================
--- CONFIGURACIÓN GENERAL
+-- SECCIÓN 3: CONFIGURACIÓN CENTRALIZADA
 -- ================================================================================================
+--[[
+	Todas las configuraciones están centralizadas aquí para facilitar ajustes.
+	Evita valores hardcodeados en el código.
+]]
+
 local CONFIG = {
-	SpinDuration = 2.5,        -- Duración del giro en segundos
-	SpinCooldown = 0.5,        -- Cooldown después del giro
-	ParticleLifetime = {0.5, 1.5}, -- Rango de vida de partículas
+	-- Tiempos de animación
+	SpinDuration = 3.0,           -- Duración del giro (más dramático)
+	SpinCooldown = 0.3,           -- Cooldown después del giro
+	RevealDelay = 0.5,            -- Delay dramático antes del reveal
+	ParticleLifetime = {0.5, 2.0}, -- Rango de vida de partículas
+	
+	-- Camera shake
+	CameraShakeIntensity = 0.3,   -- Intensidad del shake
+	CameraShakeDuration = 0.4,    -- Duración del shake
+	
+	-- UI Tweens
+	UITweenSpeed = 0.2,           -- Velocidad de tweens UI
+	ButtonHoverScale = 1.05,      -- Escala al hover
+	
+	-- RNG Avanzado
+	AntiDuplicateEnabled = true,  -- Evitar duplicados consecutivos
+	MaxConsecutiveSameRarity = 3, -- Máximo mismo tier seguido
+	
+	-- Cleanup
+	VFXCleanupDelay = 5.0,        -- Tiempo antes de limpiar VFX temporales
 }
 
 -- ================================================================================================
--- TABLA DE AURAS
+-- SECCIÓN 4: SISTEMA DE BOOSTS (Estructura para expansión)
 -- ================================================================================================
--- Cada aura tiene: nombre, rareza, probabilidad (1 en X), color principal, color secundario
--- Las probabilidades más altas = más raras
+--[[
+	Sistema preparado para luck multipliers, boosts temporales y gamepasses.
+	Solo estructura - sin monetización implementada.
+]]
+
+local BoostSystem = {
+	-- Multiplicador base de luck (1.0 = normal)
+	baseLuckMultiplier = 1.0,
+	
+	-- Boosts activos (estructura para boosts temporales)
+	activeBoosts = {},
+	
+	-- Estructura para gamepasses (solo IDs, sin implementación)
+	gamepasses = {
+		DoubleLuck = { id = 0, multiplier = 2.0, active = false },
+		TripleLuck = { id = 0, multiplier = 3.0, active = false },
+		AutoSpin = { id = 0, active = false },
+	},
+}
+
+-- Calcula el multiplicador total de luck
+function BoostSystem.getTotalLuckMultiplier()
+	local total = BoostSystem.baseLuckMultiplier
+	
+	-- Sumar boosts activos
+	for _, boost in pairs(BoostSystem.activeBoosts) do
+		if boost.active and boost.expiresAt > os.time() then
+			total = total * boost.multiplier
+		end
+	end
+	
+	-- Sumar gamepasses
+	for _, gp in pairs(BoostSystem.gamepasses) do
+		if gp.active and gp.multiplier then
+			total = total * gp.multiplier
+		end
+	end
+	
+	return total
+end
+
+-- Añadir boost temporal
+function BoostSystem.addTemporaryBoost(name, multiplier, durationSeconds)
+	BoostSystem.activeBoosts[name] = {
+		multiplier = multiplier,
+		active = true,
+		expiresAt = os.time() + durationSeconds
+	}
+end
+
+-- ================================================================================================
+-- SECCIÓN 5: CONFIGURACIÓN DE RAREZAS
+-- ================================================================================================
+--[[
+	Define propiedades visuales y de comportamiento por tier de rareza.
+	Facilita escalar efectos según rareza.
+]]
+
+local RARITY_CONFIG = {
+	Common = {
+		order = 1,
+		color = Color3.fromRGB(180, 180, 180),
+		cameraShake = false,
+		screenFlashIntensity = 0.1,
+		revealSound = nil, -- ID opcional
+		particleMultiplier = 1.0,
+	},
+	Uncommon = {
+		order = 2,
+		color = Color3.fromRGB(100, 255, 100),
+		cameraShake = false,
+		screenFlashIntensity = 0.2,
+		revealSound = nil,
+		particleMultiplier = 1.2,
+	},
+	Rare = {
+		order = 3,
+		color = Color3.fromRGB(100, 150, 255),
+		cameraShake = false,
+		screenFlashIntensity = 0.3,
+		revealSound = nil,
+		particleMultiplier = 1.4,
+	},
+	Epic = {
+		order = 4,
+		color = Color3.fromRGB(180, 100, 255),
+		cameraShake = true,
+		screenFlashIntensity = 0.4,
+		revealSound = nil,
+		particleMultiplier = 1.6,
+	},
+	Legendary = {
+		order = 5,
+		color = Color3.fromRGB(255, 200, 50),
+		cameraShake = true,
+		screenFlashIntensity = 0.5,
+		revealSound = nil,
+		particleMultiplier = 2.0,
+	},
+	Mythic = {
+		order = 6,
+		color = Color3.fromRGB(255, 100, 150),
+		cameraShake = true,
+		screenFlashIntensity = 0.6,
+		revealSound = nil,
+		particleMultiplier = 2.5,
+	},
+	Divine = {
+		order = 7,
+		color = Color3.fromRGB(255, 255, 255),
+		cameraShake = true,
+		screenFlashIntensity = 0.7,
+		revealSound = nil,
+		particleMultiplier = 3.0,
+	},
+	Unique = {
+		order = 8,
+		color = Color3.fromRGB(255, 50, 255),
+		cameraShake = true,
+		screenFlashIntensity = 0.8,
+		revealSound = nil,
+		particleMultiplier = 4.0,
+	},
+}
+
+-- ================================================================================================
+-- SECCIÓN 6: DEFINICIÓN DE AURAS
+-- ================================================================================================
+--[[
+	Tabla de auras fácilmente extensible.
+	Cada aura tiene propiedades visuales únicas.
+]]
 
 local AURAS = {
 	-- COMMON (1 en 2) - 50%
@@ -211,48 +376,145 @@ local RARITY_COLORS = {
 }
 
 -- ================================================================================================
--- VARIABLES DE ESTADO
+-- SECCIÓN 7: VARIABLES DE ESTADO
 -- ================================================================================================
 local isSpinning = false
 local currentAura = nil
 local currentAuraEffects = {} -- Almacena los efectos visuales actuales
+local lastRolledAura = nil    -- Para sistema anti-duplicados
+local consecutiveRarityCount = 0  -- Contador de rarezas consecutivas
+local lastRarity = nil        -- Última rareza obtenida
 
 -- ================================================================================================
--- MÓDULO: Sistema RNG
+-- SECCIÓN 8: SISTEMA RNG AVANZADO
 -- ================================================================================================
-local RNGSystem = {}
+--[[
+	Sistema RNG con:
+	- Weighted random preciso y escalable
+	- Anti-duplicados consecutivos
+	- Suavizado de streaks
+	- Soporte para luck multipliers
+]]
 
--- Calcula la probabilidad real usando weighted random
-function RNGSystem.rollAura()
-	-- Calcular el peso total (suma de 1/chance para cada aura)
-	local totalWeight = 0
+local RNGSystem = {
+	-- Historial para análisis de streaks
+	rollHistory = {},
+	maxHistorySize = 50,
+}
+
+-- Calcula los pesos con luck multiplier aplicado
+function RNGSystem.calculateWeights()
+	local luckMultiplier = BoostSystem.getTotalLuckMultiplier()
 	local weights = {}
+	local totalWeight = 0
 	
 	for i, aura in ipairs(AURAS) do
-		local weight = 1 / aura.chance
+		-- Aplicar luck: reduce el divisor para auras raras
+		local adjustedChance = aura.chance / luckMultiplier
+		local weight = 1 / math.max(adjustedChance, 1)
 		weights[i] = weight
 		totalWeight = totalWeight + weight
 	end
 	
-	-- Generar número aleatorio
-	local randomValue = math.random() * totalWeight
+	return weights, totalWeight
+end
+
+-- Verifica si el aura debe ser rechazada (anti-duplicado)
+function RNGSystem.shouldRejectAura(aura)
+	if not CONFIG.AntiDuplicateEnabled then
+		return false
+	end
 	
-	-- Seleccionar aura basándose en el peso
-	local currentWeight = 0
-	for i, aura in ipairs(AURAS) do
-		currentWeight = currentWeight + weights[i]
-		if randomValue <= currentWeight then
-			return aura
+	-- Rechazar si es exactamente la misma aura consecutiva
+	if lastRolledAura and lastRolledAura.name == aura.name then
+		return true
+	end
+	
+	-- Rechazar si excede el máximo de misma rareza consecutiva
+	if lastRarity == aura.rarity then
+		if consecutiveRarityCount >= CONFIG.MaxConsecutiveSameRarity then
+			return true
 		end
 	end
 	
-	-- Fallback al primer aura (no debería llegar aquí)
-	return AURAS[1]
+	return false
+end
+
+-- Actualiza el historial de rolls
+function RNGSystem.updateHistory(aura)
+	table.insert(RNGSystem.rollHistory, {
+		name = aura.name,
+		rarity = aura.rarity,
+		timestamp = os.time()
+	})
+	
+	-- Limitar tamaño del historial
+	while #RNGSystem.rollHistory > RNGSystem.maxHistorySize do
+		table.remove(RNGSystem.rollHistory, 1)
+	end
+	
+	-- Actualizar contadores anti-streak
+	if lastRarity == aura.rarity then
+		consecutiveRarityCount = consecutiveRarityCount + 1
+	else
+		consecutiveRarityCount = 1
+	end
+	
+	lastRarity = aura.rarity
+	lastRolledAura = aura
+end
+
+-- Roll principal con todas las mejoras
+function RNGSystem.rollAura()
+	local maxAttempts = 10
+	local selectedAura = nil
+	
+	for attempt = 1, maxAttempts do
+		local weights, totalWeight = RNGSystem.calculateWeights()
+		local randomValue = math.random() * totalWeight
+		local currentWeight = 0
+		
+		for i, aura in ipairs(AURAS) do
+			currentWeight = currentWeight + weights[i]
+			if randomValue <= currentWeight then
+				selectedAura = aura
+				break
+			end
+		end
+		
+		-- Verificar anti-duplicado
+		if selectedAura and not RNGSystem.shouldRejectAura(selectedAura) then
+			break
+		end
+		
+		-- Si fue rechazado, intentar de nuevo
+		selectedAura = nil
+	end
+	
+	-- Fallback si todos los intentos fallaron
+	if not selectedAura then
+		selectedAura = AURAS[math.random(1, #AURAS)]
+	end
+	
+	-- Actualizar historial
+	RNGSystem.updateHistory(selectedAura)
+	
+	return selectedAura
 end
 
 -- Calcula la probabilidad en porcentaje de un aura
 function RNGSystem.getChancePercent(aura)
-	return string.format("%.4f%%", (1 / aura.chance) * 100)
+	local luckMultiplier = BoostSystem.getTotalLuckMultiplier()
+	local adjustedChance = aura.chance / luckMultiplier
+	return string.format("%.4f%%", (1 / adjustedChance) * 100)
+end
+
+-- Obtiene la probabilidad formateada (1 en X)
+function RNGSystem.getChanceFormatted(aura)
+	local luckMultiplier = BoostSystem.getTotalLuckMultiplier()
+	local adjustedChance = math.floor(aura.chance / luckMultiplier)
+	return "1 en " .. adjustedChance
+end
 end
 
 -- ================================================================================================
