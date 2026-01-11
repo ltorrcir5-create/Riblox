@@ -13,6 +13,7 @@
 	
 	ARQUITECTURA:
 	├── Configuración centralizada (CONFIG, RARITY_CONFIG, AURAS)
+	├── Pantalla de carga AAA (LoadingScreen)
 	├── Sistema RNG avanzado (weighted, anti-duplicados, luck multipliers)
 	├── Sistema de Auras visuales (partículas, beams, highlights)
 	├── VFX cinematográficos (camera shake, screen flash, reveal dramático)
@@ -21,6 +22,10 @@
 	└── Sistema de Boosts (estructura para luck/gamepasses)
 	
 	CARACTERÍSTICAS PREMIUM:
+	- Pantalla de carga cinematográfica con progreso real
+	- Logo animado con efectos de pulso
+	- Barra de progreso con gradiente brillante
+	- Transición suave al juego principal
 	- Sistema anti-duplicados consecutivos
 	- Suavizado de RNG (evita streaks injustos)
 	- Estructura para luck multipliers y boosts temporales
@@ -31,7 +36,7 @@
 	- Optimizado para mantener FPS estables
 	
 	Autor: Copilot
-	Versión: 2.0 AAA
+	Versión: 2.5 AAA
 	================================================================================================
 ]]
 
@@ -79,6 +84,18 @@ local CONFIG = {
 	
 	-- Cleanup
 	VFXCleanupDelay = 5.0,        -- Tiempo antes de limpiar VFX temporales
+	
+	-- Loading Screen
+	LoadingScreen = {
+		MinimumDisplayTime = 2.5,     -- Tiempo mínimo de carga (segundos)
+		FadeOutDuration = 1.0,        -- Duración del fade out
+		ProgressTweenSpeed = 0.3,     -- Velocidad de animación del progreso
+		LogoScaleAnimation = 1.15,    -- Escala máxima del logo en animación
+		BackgroundColor1 = Color3.fromRGB(15, 15, 25),  -- Color degradado 1
+		BackgroundColor2 = Color3.fromRGB(30, 20, 50),  -- Color degradado 2
+		AccentColor = Color3.fromRGB(100, 80, 200),     -- Color de acento
+		TextColor = Color3.fromRGB(255, 255, 255),      -- Color del texto
+	},
 }
 
 -- ================================================================================================
@@ -132,6 +149,415 @@ function BoostSystem.addTemporaryBoost(name, multiplier, durationSeconds)
 		active = true,
 		expiresAt = os.time() + durationSeconds
 	}
+end
+
+-- ================================================================================================
+-- SECCIÓN 4.5: SISTEMA DE PANTALLA DE CARGA AAA
+-- ================================================================================================
+--[[
+	Sistema de loading screen cinematográfico y profesional.
+	
+	Características:
+	- Fondo con degradado animado
+	- Logo/título con animación de entrada
+	- Barra de progreso con animación suave
+	- Textos de estado dinámicos
+	- Transición de salida cinematográfica
+	- Progreso basado en pasos reales de inicialización
+	
+	Funciones principales:
+	- LoadingScreen.create() - Crea la pantalla de carga
+	- LoadingScreen.updateProgress() - Actualiza el progreso
+	- LoadingScreen.finish() - Finaliza y hace transición al juego
+]]
+
+local LoadingScreen = {
+	-- Referencias de UI
+	screenGui = nil,
+	mainFrame = nil,
+	progressContainer = nil,
+	progressFill = nil,
+	statusLabel = nil,
+	percentLabel = nil,
+	logoLabel = nil,
+	
+	-- Estado
+	currentProgress = 0,
+	isActive = false,
+	
+	-- Constantes
+	AVERAGE_STEP_WEIGHT = 0.15,  -- Peso promedio para normalización
+	GRADIENT_ANIM_INTERVAL = 0.08,  -- Intervalo de animación del gradiente
+	SHIMMER_ANIM_INTERVAL = 0.06,   -- Intervalo de animación del brillo
+	
+	-- Pasos de carga con sus pesos
+	loadingSteps = {
+		{ name = "Inicializando servicios...", weight = 0.15 },
+		{ name = "Preparando sistema RNG...", weight = 0.20 },
+		{ name = "Cargando auras...", weight = 0.25 },
+		{ name = "Configurando efectos visuales...", weight = 0.20 },
+		{ name = "Preparando interfaz...", weight = 0.15 },
+		{ name = "¡Listo para jugar!", weight = 0.05 },
+	},
+}
+
+-- Crea la pantalla de carga completa
+function LoadingScreen.create()
+	local cfg = CONFIG.LoadingScreen
+	
+	-- ScreenGui principal
+	local screenGui = Instance.new("ScreenGui")
+	screenGui.Name = "LoadingScreen_GUI"
+	screenGui.DisplayOrder = 999  -- Por encima de todo
+	screenGui.IgnoreGuiInset = true
+	screenGui.ResetOnSpawn = false
+	screenGui.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
+	screenGui.Parent = PlayerGui
+	
+	-- Frame principal de fondo (cubre toda la pantalla)
+	local mainFrame = Instance.new("Frame")
+	mainFrame.Name = "MainFrame"
+	mainFrame.Size = UDim2.new(1, 0, 1, 0)
+	mainFrame.Position = UDim2.new(0, 0, 0, 0)
+	mainFrame.BackgroundColor3 = cfg.BackgroundColor1
+	mainFrame.BorderSizePixel = 0
+	mainFrame.Parent = screenGui
+	
+	-- Gradiente de fondo
+	local gradient = Instance.new("UIGradient")
+	gradient.Color = ColorSequence.new({
+		ColorSequenceKeypoint.new(0, cfg.BackgroundColor1),
+		ColorSequenceKeypoint.new(0.5, cfg.BackgroundColor2),
+		ColorSequenceKeypoint.new(1, cfg.BackgroundColor1),
+	})
+	gradient.Rotation = 45
+	gradient.Parent = mainFrame
+	
+	-- Animación del gradiente (optimizado para performance)
+	task.spawn(function()
+		local rotation = 45
+		while LoadingScreen.isActive and mainFrame.Parent do
+			rotation = rotation + 0.8
+			gradient.Rotation = rotation % 360
+			task.wait(LoadingScreen.GRADIENT_ANIM_INTERVAL)
+		end
+	end)
+	
+	-- Container central
+	local centerContainer = Instance.new("Frame")
+	centerContainer.Name = "CenterContainer"
+	centerContainer.Size = UDim2.new(0.8, 0, 0.5, 0)
+	centerContainer.Position = UDim2.new(0.1, 0, 0.25, 0)
+	centerContainer.BackgroundTransparency = 1
+	centerContainer.Parent = mainFrame
+	
+	-- Logo/Título del juego
+	local logoLabel = Instance.new("TextLabel")
+	logoLabel.Name = "LogoLabel"
+	logoLabel.Size = UDim2.new(1, 0, 0, 80)
+	logoLabel.Position = UDim2.new(0, 0, 0.1, 0)
+	logoLabel.BackgroundTransparency = 1
+	logoLabel.Text = "⚡ AURAS RNG ⚡"
+	logoLabel.TextColor3 = cfg.TextColor
+	logoLabel.TextSize = 48
+	logoLabel.Font = Enum.Font.GothamBlack
+	logoLabel.TextTransparency = 1  -- Empieza invisible
+	logoLabel.Parent = centerContainer
+	
+	-- Subtítulo
+	local subtitleLabel = Instance.new("TextLabel")
+	subtitleLabel.Name = "SubtitleLabel"
+	subtitleLabel.Size = UDim2.new(1, 0, 0, 30)
+	subtitleLabel.Position = UDim2.new(0, 0, 0.1, 85)
+	subtitleLabel.BackgroundTransparency = 1
+	subtitleLabel.Text = "Premium Edition"
+	subtitleLabel.TextColor3 = cfg.AccentColor
+	subtitleLabel.TextSize = 18
+	subtitleLabel.Font = Enum.Font.GothamSemibold
+	subtitleLabel.TextTransparency = 1
+	subtitleLabel.Parent = centerContainer
+	
+	-- Contenedor de la barra de progreso
+	local progressContainer = Instance.new("Frame")
+	progressContainer.Name = "ProgressContainer"
+	progressContainer.Size = UDim2.new(0.6, 0, 0, 8)
+	progressContainer.Position = UDim2.new(0.2, 0, 0.55, 0)
+	progressContainer.BackgroundColor3 = Color3.fromRGB(40, 40, 60)
+	progressContainer.BorderSizePixel = 0
+	progressContainer.Parent = centerContainer
+	
+	local progressCorner = Instance.new("UICorner")
+	progressCorner.CornerRadius = UDim.new(0, 4)
+	progressCorner.Parent = progressContainer
+	
+	-- Barra de progreso (fill)
+	local progressFill = Instance.new("Frame")
+	progressFill.Name = "ProgressFill"
+	progressFill.Size = UDim2.new(0, 0, 1, 0)
+	progressFill.Position = UDim2.new(0, 0, 0, 0)
+	progressFill.BackgroundColor3 = cfg.AccentColor
+	progressFill.BorderSizePixel = 0
+	progressFill.Parent = progressContainer
+	
+	local fillCorner = Instance.new("UICorner")
+	fillCorner.CornerRadius = UDim.new(0, 4)
+	fillCorner.Parent = progressFill
+	
+	-- Efecto de brillo en la barra
+	local fillGradient = Instance.new("UIGradient")
+	fillGradient.Color = ColorSequence.new({
+		ColorSequenceKeypoint.new(0, Color3.fromRGB(255, 255, 255)),
+		ColorSequenceKeypoint.new(0.5, cfg.AccentColor),
+		ColorSequenceKeypoint.new(1, Color3.fromRGB(255, 255, 255)),
+	})
+	fillGradient.Transparency = NumberSequence.new({
+		NumberSequenceKeypoint.new(0, 0.3),
+		NumberSequenceKeypoint.new(0.5, 0),
+		NumberSequenceKeypoint.new(1, 0.3),
+	})
+	fillGradient.Parent = progressFill
+	
+	-- Animación del brillo (optimizado para performance)
+	task.spawn(function()
+		local offset = 0
+		while LoadingScreen.isActive and progressFill.Parent do
+			offset = (offset + 0.03) % 1
+			fillGradient.Offset = Vector2.new(offset, 0)
+			task.wait(LoadingScreen.SHIMMER_ANIM_INTERVAL)
+		end
+	end)
+	
+	-- Texto de porcentaje
+	local percentLabel = Instance.new("TextLabel")
+	percentLabel.Name = "PercentLabel"
+	percentLabel.Size = UDim2.new(1, 0, 0, 25)
+	percentLabel.Position = UDim2.new(0, 0, 0.55, 15)
+	percentLabel.BackgroundTransparency = 1
+	percentLabel.Text = "0%"
+	percentLabel.TextColor3 = cfg.TextColor
+	percentLabel.TextSize = 16
+	percentLabel.Font = Enum.Font.GothamBold
+	percentLabel.Parent = centerContainer
+	
+	-- Texto de estado
+	local statusLabel = Instance.new("TextLabel")
+	statusLabel.Name = "StatusLabel"
+	statusLabel.Size = UDim2.new(1, 0, 0, 25)
+	statusLabel.Position = UDim2.new(0, 0, 0.65, 0)
+	statusLabel.BackgroundTransparency = 1
+	statusLabel.Text = "Iniciando..."
+	statusLabel.TextColor3 = Color3.fromRGB(180, 180, 200)
+	statusLabel.TextSize = 14
+	statusLabel.Font = Enum.Font.Gotham
+	statusLabel.Parent = centerContainer
+	
+	-- Texto inferior (tip o crédito)
+	local tipLabel = Instance.new("TextLabel")
+	tipLabel.Name = "TipLabel"
+	tipLabel.Size = UDim2.new(1, 0, 0, 20)
+	tipLabel.Position = UDim2.new(0, 0, 1, -40)
+	tipLabel.BackgroundTransparency = 1
+	tipLabel.Text = "💡 Consejo: Las auras más raras tienen efectos visuales más intensos"
+	tipLabel.TextColor3 = Color3.fromRGB(120, 120, 140)
+	tipLabel.TextSize = 12
+	tipLabel.Font = Enum.Font.Gotham
+	tipLabel.TextTransparency = 1
+	tipLabel.Parent = mainFrame
+	
+	-- Guardar referencias
+	LoadingScreen.screenGui = screenGui
+	LoadingScreen.mainFrame = mainFrame
+	LoadingScreen.progressFill = progressFill
+	LoadingScreen.statusLabel = statusLabel
+	LoadingScreen.percentLabel = percentLabel
+	LoadingScreen.logoLabel = logoLabel
+	LoadingScreen.subtitleLabel = subtitleLabel
+	LoadingScreen.tipLabel = tipLabel
+	LoadingScreen.isActive = true
+	
+	-- Animación de entrada del logo
+	local logoTween = TweenService:Create(logoLabel, TweenInfo.new(0.8, Enum.EasingStyle.Back, Enum.EasingDirection.Out), {
+		TextTransparency = 0
+	})
+	logoTween:Play()
+	
+	-- Animación de entrada del subtítulo (con delay)
+	task.delay(0.3, function()
+		local subtitleTween = TweenService:Create(subtitleLabel, TweenInfo.new(0.5, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), {
+			TextTransparency = 0
+		})
+		subtitleTween:Play()
+	end)
+	
+	-- Animación de entrada del tip
+	task.delay(0.6, function()
+		local tipTween = TweenService:Create(tipLabel, TweenInfo.new(0.5, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), {
+			TextTransparency = 0
+		})
+		tipTween:Play()
+	end)
+	
+	-- Animación de pulso del logo
+	task.spawn(function()
+		while LoadingScreen.isActive and logoLabel.Parent do
+			local scaleUp = TweenService:Create(logoLabel, TweenInfo.new(1.5, Enum.EasingStyle.Sine, Enum.EasingDirection.InOut), {
+				TextSize = 48 * CONFIG.LoadingScreen.LogoScaleAnimation
+			})
+			scaleUp:Play()
+			scaleUp.Completed:Wait()
+			
+			if not LoadingScreen.isActive then break end
+			
+			local scaleDown = TweenService:Create(logoLabel, TweenInfo.new(1.5, Enum.EasingStyle.Sine, Enum.EasingDirection.InOut), {
+				TextSize = 48
+			})
+			scaleDown:Play()
+			scaleDown.Completed:Wait()
+		end
+	end)
+	
+	return screenGui
+end
+
+-- Actualiza el progreso de carga
+function LoadingScreen.updateProgress(progress, statusText)
+	if not LoadingScreen.isActive then return end
+	
+	local cfg = CONFIG.LoadingScreen
+	progress = math.clamp(progress, 0, 1)
+	
+	-- Animar la barra de progreso suavemente
+	local progressTween = TweenService:Create(
+		LoadingScreen.progressFill, 
+		TweenInfo.new(cfg.ProgressTweenSpeed, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), 
+		{ Size = UDim2.new(progress, 0, 1, 0) }
+	)
+	progressTween:Play()
+	
+	-- Actualizar porcentaje con animación
+	local percent = math.floor(progress * 100)
+	LoadingScreen.percentLabel.Text = percent .. "%"
+	
+	-- Actualizar texto de estado
+	if statusText then
+		LoadingScreen.statusLabel.Text = statusText
+	end
+	
+	LoadingScreen.currentProgress = progress
+end
+
+-- Ejecuta un paso de carga con delay realista
+function LoadingScreen.executeStep(stepIndex)
+	if stepIndex > #LoadingScreen.loadingSteps then return end
+	
+	local step = LoadingScreen.loadingSteps[stepIndex]
+	local previousProgress = LoadingScreen.currentProgress
+	local newProgress = previousProgress + step.weight
+	
+	LoadingScreen.updateProgress(newProgress, step.name)
+end
+
+-- Finaliza la pantalla de carga con transición cinematográfica
+function LoadingScreen.finish()
+	if not LoadingScreen.isActive then return end
+	
+	local cfg = CONFIG.LoadingScreen
+	
+	-- Marcar como completado
+	LoadingScreen.updateProgress(1, "¡Listo para jugar!")
+	
+	-- Pequeño delay dramático
+	task.wait(0.5)
+	
+	-- Flash blanco sutil
+	local flash = Instance.new("Frame")
+	flash.Name = "TransitionFlash"
+	flash.Size = UDim2.new(1, 0, 1, 0)
+	flash.Position = UDim2.new(0, 0, 0, 0)
+	flash.BackgroundColor3 = Color3.fromRGB(255, 255, 255)
+	flash.BackgroundTransparency = 1
+	flash.ZIndex = 10
+	flash.Parent = LoadingScreen.mainFrame
+	
+	-- Flash in
+	local flashIn = TweenService:Create(flash, TweenInfo.new(0.2, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), {
+		BackgroundTransparency = 0.7
+	})
+	flashIn:Play()
+	flashIn.Completed:Wait()
+	
+	-- Flash out + fade de toda la pantalla
+	local flashOut = TweenService:Create(flash, TweenInfo.new(0.3, Enum.EasingStyle.Quad, Enum.EasingDirection.In), {
+		BackgroundTransparency = 1
+	})
+	flashOut:Play()
+	
+	-- Fade out del frame principal
+	local fadeOut = TweenService:Create(LoadingScreen.mainFrame, TweenInfo.new(cfg.FadeOutDuration, Enum.EasingStyle.Quad, Enum.EasingDirection.InOut), {
+		BackgroundTransparency = 1
+	})
+	fadeOut:Play()
+	
+	-- Fade out de todos los elementos de texto
+	for _, child in ipairs(LoadingScreen.mainFrame:GetDescendants()) do
+		if child:IsA("TextLabel") then
+			local textFade = TweenService:Create(child, TweenInfo.new(cfg.FadeOutDuration * 0.8, Enum.EasingStyle.Quad), {
+				TextTransparency = 1
+			})
+			textFade:Play()
+		elseif child:IsA("Frame") and child.Name ~= "TransitionFlash" then
+			local frameFade = TweenService:Create(child, TweenInfo.new(cfg.FadeOutDuration * 0.8, Enum.EasingStyle.Quad), {
+				BackgroundTransparency = 1
+			})
+			frameFade:Play()
+		end
+	end
+	
+	-- Esperar a que termine la animación
+	fadeOut.Completed:Wait()
+	
+	-- Marcar como inactivo y limpiar
+	LoadingScreen.isActive = false
+	
+	-- Destruir la pantalla de carga
+	if LoadingScreen.screenGui then
+		LoadingScreen.screenGui:Destroy()
+		LoadingScreen.screenGui = nil
+	end
+	
+	-- Limpiar referencias
+	LoadingScreen.mainFrame = nil
+	LoadingScreen.progressFill = nil
+	LoadingScreen.statusLabel = nil
+	LoadingScreen.percentLabel = nil
+	LoadingScreen.logoLabel = nil
+end
+
+-- Ejecuta la secuencia completa de carga
+function LoadingScreen.runLoadingSequence(onComplete)
+	-- Crear la pantalla
+	LoadingScreen.create()
+	
+	-- Ejecutar pasos de carga con delays realistas
+	local stepDelay = CONFIG.LoadingScreen.MinimumDisplayTime / #LoadingScreen.loadingSteps
+	
+	for i, step in ipairs(LoadingScreen.loadingSteps) do
+		-- Delay variable basado en el peso del paso (normalizado al peso promedio)
+		local delay = stepDelay * (step.weight / LoadingScreen.AVERAGE_STEP_WEIGHT)
+		task.wait(math.max(delay, 0.3))
+		LoadingScreen.executeStep(i)
+	end
+	
+	-- Pequeña pausa antes de terminar
+	task.wait(0.3)
+	
+	-- Finalizar con transición
+	LoadingScreen.finish()
+	
+	-- Callback cuando termine
+	if onComplete then
+		onComplete()
+	end
 end
 
 -- ================================================================================================
@@ -1083,20 +1509,68 @@ function SpinController.performSpin(screenGui)
 end
 
 -- ================================================================================================
--- INICIALIZACIÓN PRINCIPAL
+-- INICIALIZACIÓN PRINCIPAL CON LOADING SCREEN
 -- ================================================================================================
-local function initialize()
-	-- Esperar a que cargue el personaje
-	if not LocalPlayer.Character then
-		LocalPlayer.CharacterAdded:Wait()
-	end
+--[[
+	Secuencia de inicialización:
+	1. Mostrar pantalla de carga AAA
+	2. Esperar personaje
+	3. Inicializar sistemas
+	4. Crear UI principal
+	5. Transición cinematográfica al juego
+]]
+
+local function initializeGame()
+	-- Esta función se llama después de la pantalla de carga
 	
-	-- Crear la UI
+	-- Crear la UI principal (oculta inicialmente)
 	local screenGui = UIModule.createMainUI()
 	
 	-- Obtener referencia al botón
 	local mainFrame = screenGui:FindFirstChild("MainFrame")
 	local spinButton = mainFrame:FindFirstChild("SpinButton")
+	
+	-- Ocultar UI inicialmente para animación de entrada
+	mainFrame.BackgroundTransparency = 1
+	for _, child in ipairs(mainFrame:GetDescendants()) do
+		if child:IsA("TextLabel") or child:IsA("TextButton") then
+			child.TextTransparency = 1
+		elseif child:IsA("Frame") then
+			child.BackgroundTransparency = 1
+		end
+	end
+	
+	-- Animación de entrada de la UI principal
+	task.spawn(function()
+		task.wait(0.1)
+		
+		-- Fade in del frame principal
+		local mainFadeIn = TweenService:Create(mainFrame, TweenInfo.new(0.5, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), {
+			BackgroundTransparency = 0
+		})
+		mainFadeIn:Play()
+		
+		-- Fade in de los elementos hijos
+		for _, child in ipairs(mainFrame:GetDescendants()) do
+			if child:IsA("TextLabel") then
+				local textFade = TweenService:Create(child, TweenInfo.new(0.4, Enum.EasingStyle.Quad), {
+					TextTransparency = 0
+				})
+				textFade:Play()
+			elseif child:IsA("TextButton") then
+				local btnFade = TweenService:Create(child, TweenInfo.new(0.4, Enum.EasingStyle.Quad), {
+					TextTransparency = 0,
+					BackgroundTransparency = 0
+				})
+				btnFade:Play()
+			elseif child:IsA("Frame") and child.Name ~= "SpinBarBackground" then
+				local frameFade = TweenService:Create(child, TweenInfo.new(0.4, Enum.EasingStyle.Quad), {
+					BackgroundTransparency = 0
+				})
+				frameFade:Play()
+			end
+		end
+	end)
 	
 	-- Conectar evento del botón
 	spinButton.MouseButton1Click:Connect(function()
@@ -1117,10 +1591,23 @@ local function initialize()
 	-- Mensaje de bienvenida
 	print("=======================================")
 	print("🎰 AURAS RNG - Sistema Inicializado 🎰")
-	print("Versión: 1.0")
+	print("Versión: 2.0 AAA")
 	print("Total de auras: " .. #AURAS)
 	print("¡Presiona SPIN para comenzar!")
 	print("=======================================")
+end
+
+local function initialize()
+	-- Mostrar pantalla de carga inmediatamente
+	LoadingScreen.runLoadingSequence(function()
+		-- Esperar a que cargue el personaje si no está listo
+		if not LocalPlayer.Character then
+			LocalPlayer.CharacterAdded:Wait()
+		end
+		
+		-- Inicializar el juego después de la pantalla de carga
+		initializeGame()
+	end)
 end
 
 -- Iniciar el script
