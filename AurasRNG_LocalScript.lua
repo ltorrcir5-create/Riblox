@@ -673,7 +673,10 @@ function AuraVisualModule.applyAura(aura)
 			NumberSequenceKeypoint.new(0.5, 0.3),
 			NumberSequenceKeypoint.new(1, 0)
 		})
-		ringParticles.Transparency = NumberSequence.new(0.2)
+		ringParticles.Transparency = NumberSequence.new({
+			NumberSequenceKeypoint.new(0, 0.2),
+			NumberSequenceKeypoint.new(1, 1)
+		})
 		ringParticles.Lifetime = NumberRange.new(2, 3)
 		ringParticles.Rate = 30
 		ringParticles.Speed = NumberRange.new(0, 0)
@@ -744,10 +747,10 @@ function SpinController.performSpin(screenGui)
 	barTween:Play()
 	
 	-- Animación de texto girando (mostrar diferentes auras)
-	local spinStartTime = tick()
+	local spinStartTime = os.clock()
 	local spinAnimConnection
 	spinAnimConnection = RunService.Heartbeat:Connect(function()
-		local elapsed = tick() - spinStartTime
+		local elapsed = os.clock() - spinStartTime
 		if elapsed < CONFIG.SpinDuration then
 			-- Mostrar auras aleatorias rápidamente
 			local randomAura = AURAS[math.random(1, #AURAS)]
